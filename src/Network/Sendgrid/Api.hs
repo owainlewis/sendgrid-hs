@@ -79,7 +79,7 @@ postRequest url body = do
 
 sendEmail auth message =
   let fullUrl = baseUrl <> "mail.send.json" in
-  postRequest fullUrl (asTuple auth ++ asTuple message)
+  postRequest fullUrl (asTuple auth <> asTuple message)
 
 message = EmailMessage { to = "owain@owainlewis.com"
                        , from = "noreply@vacancy.io"
