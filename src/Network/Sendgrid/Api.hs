@@ -1,7 +1,10 @@
 {-# LANGUAGE OverloadedStrings #-}
 
 module Network.Sendgrid.Api
-  (
+  ( Authentication(..)
+  , EmailMessage(..)
+  , postRequest
+  , sendEmail
   ) where
 
 import Network.HTTP.Conduit
