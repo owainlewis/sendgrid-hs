@@ -1,3 +1,4 @@
+{-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE OverloadedStrings #-}
 
 module Network.Sendgrid.Api
@@ -13,10 +14,11 @@ import Data.Monoid((<>))
 import Data.List(partition)
 import Control.Monad.IO.Class
 import Control.Monad.Catch
+import Control.Monad.Trans.Control
 import qualified Data.Text as T
 import qualified Data.ByteString.Char8 as BS
 import qualified Data.ByteString.Lazy as L
-
+-- import Control.Monad.Trans.Control.MonadBaseControl
 import Network.Sendgrid.Utils (urlEncode)
 
 -- | The base url for the Sendgrid API
@@ -68,7 +70,11 @@ urlEncodeVars ((n,v):t) =
        where urlEncodeRest [] = []
              urlEncodeRest diff = '&' : urlEncodeVars diff
 
-postRequest::(MonadThrow m, MonadIO m) => String -> [(String, String)] -> m (Response L.ByteString)
+
+postRequest :: (MonadThrow m,
+                MonadIO m,
+                Control.Monad.Trans.Control.MonadBaseControl IO m) =>
+                String -> [(String, String)] -> m (Response L.ByteString)
 postRequest url body = do
   initReq <- parseUrl url
   let req = initReq
@@ -79,13 +85,10 @@ postRequest url body = do
   response <- withManager $ httpLbs req
   return response
 
+sendEmail
+  :: (Tupled a1, Tupled a, MonadThrow m, MonadIO m,
+      MonadBaseControl IO m) =>
+     a -> a1 -> m (Response L.ByteString)
 sendEmail auth message =
   let fullUrl = baseUrl <> "mail.send.json" in
   postRequest fullUrl (asTuple auth <> asTuple message)
-
-message = EmailMessage { to = "owain@owainlewis.com"
-                       , from = "noreply@vacancy.io"
-                       , subject = "Hello"
-                       , text = "Oh Hai there!" }
-
---
