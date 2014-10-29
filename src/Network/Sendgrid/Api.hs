@@ -86,8 +86,8 @@ postRequest url body = do
   return response
 
 sendEmail
-  :: (Tupled a1, Tupled a, MonadThrow m, MonadIO m,
-      MonadBaseControl IO m) => a -> a1 -> m (Response L.ByteString)
+  :: (Tupled a1, Tupled a, MonadThrow m, MonadIO m, MonadBaseControl IO m) => 
+      a -> a1 -> m (Response L.ByteString)
 sendEmail auth message =
   let fullUrl = baseUrl <> "mail.send.json" in
   postRequest fullUrl (asTuple auth <> asTuple message)
