@@ -31,6 +31,8 @@ baseUrl = "https://api.sendgrid.com/api/"
 class Tupled a where
     asTuple :: a -> [(String, String)]
 
+------------------------------------------------------------------------------
+-- | Auth
 data Authentication = Authentication
   { user :: String
   , key  :: String
@@ -43,6 +45,8 @@ instance Tupled Authentication where
     where u = user a
           k = key a
 
+------------------------------------------------------------------------------
+-- | Messages
 data EmailMessage = EmailMessage {
     to      :: String
   , from    :: String
@@ -61,6 +65,8 @@ instance Tupled EmailMessage where
       , ("subject", s)
       , ("text", x) ]
 
+------------------------------------------------------------------------------
+-- | Helper function to encoding URLs
 urlEncodeVars :: [(String,String)] -> String
 urlEncodeVars [] = []
 urlEncodeVars ((n,v):t) =
@@ -70,7 +76,8 @@ urlEncodeVars ((n,v):t) =
        where urlEncodeRest [] = []
              urlEncodeRest diff = '&' : urlEncodeVars diff
 
-
+------------------------------------------------------------------------------
+-- | HTTP request helpers
 postRequest :: (MonadThrow m,
                 MonadIO m,
                 Control.Monad.Trans.Control.MonadBaseControl IO m) =>
@@ -85,6 +92,8 @@ postRequest url body = do
   response <- withManager $ httpLbs req
   return response
 
+------------------------------------------------------------------------------
+-- | 
 sendEmail
   :: (Tupled a1, Tupled a, MonadThrow m, MonadIO m, MonadBaseControl IO m) => 
       a -> a1 -> m (Response L.ByteString)
