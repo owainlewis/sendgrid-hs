@@ -11,7 +11,8 @@ import Network.HTTP.Conduit
 import Data.Aeson
 import Data.Monoid((<>))
 import Data.List(partition)
-
+import Control.Monad.IO.Class
+import Control.Monad.Catch
 import qualified Data.Text as T
 import qualified Data.ByteString.Char8 as BS
 import qualified Data.ByteString.Lazy as L
@@ -67,6 +68,7 @@ urlEncodeVars ((n,v):t) =
        where urlEncodeRest [] = []
              urlEncodeRest diff = '&' : urlEncodeVars diff
 
+postRequest::(MonadThrow m, MonadIO m) => String -> [(String, String)] -> m (Response L.ByteString)
 postRequest url body = do
   initReq <- parseUrl url
   let req = initReq
