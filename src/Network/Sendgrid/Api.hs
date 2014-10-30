@@ -1,26 +1,29 @@
-{-# LANGUAGE FlexibleContexts      #-}
-{-# LANGUAGE MultiParamTypeClasses #-}
-{-# LANGUAGE OverloadedStrings     #-}
+{-# LANGUAGE FlexibleContexts          #-}
+{-# LANGUAGE MultiParamTypeClasses     #-}
+{-# LANGUAGE NoMonomorphismRestriction #-}
+{-# LANGUAGE OverloadedStrings         #-}
 
 module Network.Sendgrid.Api
   ( Authentication(..)
   , EmailMessage(..)
+  , makeRequest
+  , getRequest
   , postRequest
---
   , sendEmail
   ) where
 
+import           Control.Applicative         ((<$>), (<*>))
+import           Control.Monad               (mzero)
 import           Control.Monad.Catch
 import           Control.Monad.IO.Class
 import           Control.Monad.Trans.Control
-import           Data.Aeson
-import           Data.List                   (partition)
-import           Data.Monoid                 ((<>))
-import           Network.HTTP.Conduit
-
+import qualified Data.Aeson                  as Aeson
 import qualified Data.ByteString.Char8       as BS
 import qualified Data.ByteString.Lazy        as L
+import           Data.List                   (partition)
+import           Data.Monoid                 ((<>))
 import qualified Data.Text                   as T
+import           Network.HTTP.Conduit
 
 -- import Control.Monad.Trans.Control.MonadBaseControl
 import           Network.Sendgrid.Utils      (urlEncode)
@@ -30,11 +33,7 @@ import           Network.Sendgrid.Utils      (urlEncode)
 baseUrl :: String
 baseUrl = "https://api.sendgrid.com/api/"
 
--- | Form params will be represented as concrete Haskell types that get converted to simple tuples
---   when posting via conduit
-class Tupled a where
-    asTuple :: a -> [(String, String)]
-
+class Tupled a where asTuple :: a -> [(String, String)]
 ------------------------------------------------------------------------------
 -- | Auth
 data Authentication = Authentication
@@ -80,29 +79,110 @@ urlEncodeVars ((n,v):t) =
        where urlEncodeRest [] = []
              urlEncodeRest diff = '&' : urlEncodeVars diff
 
-------------------------------------------------------------------------------
--- | HTTP request helpers
-postRequest :: (MonadThrow m,
-                MonadIO m,
-                Control.Monad.Trans.Control.MonadBaseControl IO m) =>
-                String -> [(String, String)] -> m (Response L.ByteString)
-postRequest url body = do
-  initReq <- parseUrl url
-  let req = initReq
-            { method = "POST"
-            , requestHeaders = [
-                ("content-type", "application/x-www-form-urlencoded")
-              ]
-            , requestBody = RequestBodyBS $ BS.pack . urlEncodeVars $ body
-            }
-  response <- withManager $ httpLbs req
-  return response
+data Method = GET | POST
+
+class AsByteString a where
+    asByteString :: a -> BS.ByteString
+
+showBS :: Show a => a -> BS.ByteString
+showBS = BS.pack . show
+
+instance AsByteString Method where
+  asByteString = showBS
+
+instance Show Method where
+    show GET  = "GET"
+    show POST = "POST"
 
 ------------------------------------------------------------------------------
--- |
-sendEmail
-  :: (Tupled a1, Tupled a, MonadThrow m, MonadIO m, MonadBaseControl IO m) =>
-      a -> a1 -> m (Response L.ByteString)
+-- | HTTP request helpers
+
+makeRequest method url body =
+  let rBody = BS.pack . urlEncodeVars $ body in
+  do
+    initReq <- parseUrl url
+    let req = initReq
+              { method = showBS method
+              , requestHeaders = [ ("content-type", "application/x-www-form-urlencoded") ]
+              , requestBody = RequestBodyBS $ rBody
+              }
+    response <- withManager $ httpLbs req
+    return $ responseBody response
+
+------------------------------------------------------------------------------
+-- | Request helpers
+
+postRequest :: (MonadThrow m, MonadIO m, MonadBaseControl IO m) =>
+  String ->
+  [ (String, String) ] ->
+  m L.ByteString
+postRequest = makeRequest POST
+
+getRequest :: (MonadThrow m, MonadIO m, MonadBaseControl IO m) =>
+  String ->
+  [ (String, String) ] ->
+  m L.ByteString
+getRequest = makeRequest GET
+
+------------------------------------------------------------------------------
+-- | Get user profile
+
+data Profile = Profile {
+    profileUsername  :: String
+  , profileEmail     :: String
+  , profileActive    :: String
+  , profileFirstName :: String
+  , profileLastName  :: String
+  , profileAddress   :: String
+  , profileCity      :: String
+  , profileState     :: String
+  , profileZip       :: String
+  , profileCountry   :: String
+  , profilePhone     :: String
+  , profileWebsite   :: String
+} deriving ( Show )
+
+instance Aeson.FromJSON Profile where
+    parseJSON (Aeson.Object o) =
+        Profile <$>
+          o Aeson..: "username"   <*>
+          o Aeson..: "email"      <*>
+          o Aeson..: "active"     <*>
+          o Aeson..: "first_name" <*>
+          o Aeson..: "last_name"  <*>
+          o Aeson..: "address"    <*>
+          o Aeson..: "city"       <*>
+          o Aeson..: "state"      <*>
+          o Aeson..: "zip"        <*>
+          o Aeson..: "country"    <*>
+          o Aeson..: "phone"      <*>
+          o Aeson..: "website"
+    parseJSON _ = mzero
+
+getProfile :: (MonadThrow m, MonadIO m, MonadBaseControl IO m, Tupled a) =>
+  a ->
+  m (L.ByteString)
+getProfile auth = let fullUrl = baseUrl <> "profile.get.json" in
+                  makeRequest POST fullUrl (asTuple auth)
+------------------------------------------------------------------------------
+
+data MailSuccess = MailSuccess {
+  message :: String
+} deriving ( Show )
+
+instance Aeson.FromJSON MailSuccess where
+    parseJSON (Aeson.Object o) = MailSuccess <$> o Aeson..: "message"
+    parseJSON _ = mzero
+
+------------------------------------------------------------------------------
+-- | Send an email message
+--   i.e sendEmail (Authentication "FOO" "BAR") (Message ...)
+sendEmail :: (Tupled a1, Tupled a, MonadThrow m, MonadIO m, MonadBaseControl IO m) =>
+  a ->
+  a1 ->
+  IO (Maybe MailSuccess)
 sendEmail auth message =
-  let fullUrl = baseUrl <> "mail.send.json" in
-  postRequest fullUrl (asTuple auth <> asTuple message)
+  let fullUrl = baseUrl <> "mail.send.json"
+      response = makeRequest POST fullUrl (asTuple auth <> asTuple message) in
+  Aeson.decode <$> response
+

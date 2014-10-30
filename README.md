@@ -11,10 +11,8 @@ import qualified Network.Sendgrid.Api as Sendgrid
 message = SendGrid.EmailMessage { to = "owain@owainlewis.com"
                                 , from = "noreply@vacancy.io"
                                 , subject = "Hello World"
-                                , text = "Oh Hai!" }
+                                , text = "Oh
 
-main = do
-    r <- SendGrid.sendEmail (Authentication "USERNAME" "PASSWORD") message
-    return $ responseBody r
+response = SendGrid.sendEmail (Authentication "USERNAME" "PASSWORD") message
 
 ```

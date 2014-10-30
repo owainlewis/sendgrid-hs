@@ -1,12 +1,13 @@
-module Main ( ) where
+{-# LANGUAGE NoMonomorphismRestriction #-}
 
-import Network.Sendgrid.Api
-import Network.Sendgrid.Utils
+module Main where
 
-message :: EmailMessage
-message = EmailMessage { to = "owain@owainlewis.com"
-                       , from = "noreply@vacancy.io"
-                       , subject = "Hello"
-                       , text = "Oh Hai there!" }
+import           Network.Sendgrid.Api
 
--- sendEmail (Authentication "" "")
+sendWelcomeMessage = sendEmail (Authentication "" "") message
+    where message = EmailMessage { to = "owain@owainlewis.com"
+                                 , from = "noreply@vacancy.io"
+                                 , subject = "Hello"
+                                 , text = "Oh Hai there!" }
+
+
