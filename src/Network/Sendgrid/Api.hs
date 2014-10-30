@@ -1,25 +1,29 @@
-{-# LANGUAGE FlexibleContexts #-}
-{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE FlexibleContexts      #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE OverloadedStrings     #-}
 
 module Network.Sendgrid.Api
   ( Authentication(..)
   , EmailMessage(..)
   , postRequest
+--
   , sendEmail
   ) where
 
-import Network.HTTP.Conduit
-import Data.Aeson
-import Data.Monoid((<>))
-import Data.List(partition)
-import Control.Monad.IO.Class
-import Control.Monad.Catch
-import Control.Monad.Trans.Control
-import qualified Data.Text as T
-import qualified Data.ByteString.Char8 as BS
-import qualified Data.ByteString.Lazy as L
+import           Control.Monad.Catch
+import           Control.Monad.IO.Class
+import           Control.Monad.Trans.Control
+import           Data.Aeson
+import           Data.List                   (partition)
+import           Data.Monoid                 ((<>))
+import           Network.HTTP.Conduit
+
+import qualified Data.ByteString.Char8       as BS
+import qualified Data.ByteString.Lazy        as L
+import qualified Data.Text                   as T
+
 -- import Control.Monad.Trans.Control.MonadBaseControl
-import Network.Sendgrid.Utils (urlEncode)
+import           Network.Sendgrid.Utils      (urlEncode)
 
 -- | The base url for the Sendgrid API
 --
@@ -86,16 +90,18 @@ postRequest url body = do
   initReq <- parseUrl url
   let req = initReq
             { method = "POST"
-            , requestHeaders = [ ("content-type", "application/x-www-form-urlencoded") ]
+            , requestHeaders = [
+                ("content-type", "application/x-www-form-urlencoded")
+              ]
             , requestBody = RequestBodyBS $ BS.pack . urlEncodeVars $ body
             }
   response <- withManager $ httpLbs req
   return response
 
 ------------------------------------------------------------------------------
--- | 
+-- |
 sendEmail
-  :: (Tupled a1, Tupled a, MonadThrow m, MonadIO m, MonadBaseControl IO m) => 
+  :: (Tupled a1, Tupled a, MonadThrow m, MonadIO m, MonadBaseControl IO m) =>
       a -> a1 -> m (Response L.ByteString)
 sendEmail auth message =
   let fullUrl = baseUrl <> "mail.send.json" in
