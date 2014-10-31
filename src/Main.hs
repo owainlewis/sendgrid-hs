@@ -9,5 +9,3 @@ sendWelcomeMessage = sendEmail (Authentication "" "") message
                                  , from = "noreply@vacancy.io"
                                  , subject = "Hello"
                                  , text = "Oh Hai there!" }
-
-
