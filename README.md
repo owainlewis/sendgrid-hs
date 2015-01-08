@@ -1,4 +1,4 @@
- Sengrid API
+ Sendgrid API
  -------------------------------
 
 Haskell utility for sending Email with Sendgrid
