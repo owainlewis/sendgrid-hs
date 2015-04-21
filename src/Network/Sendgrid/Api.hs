@@ -177,7 +177,7 @@ instance Aeson.FromJSON MailSuccess where
 ------------------------------------------------------------------------------
 -- | Send an email message
 --   i.e sendEmail (Authentication "FOO" "BAR") (Message ...)
-sendEmail :: (Tupled a1, Tupled a, MonadThrow m, MonadIO m, MonadBaseControl IO m) =>
+sendEmail :: (Tupled a1, Tupled a) =>
   a ->
   a1 ->
   IO (Maybe MailSuccess)
