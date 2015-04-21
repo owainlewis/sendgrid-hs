@@ -2,10 +2,11 @@
 -- documentation, see http://haskell.org/cabal/users-guide/
 
 name:                sendgrid-haskell
-version:             0.1.0.0
+version:             1.0
+description:         A Haskell SendGrid API client
 synopsis:            Sengrid API
 -- description:
-homepage:            https://vacancy.io
+homepage:            https://owainlewis.com
 license:             MIT
 license-file:        LICENSE
 author:              Owain Lewis
@@ -21,7 +22,7 @@ library
   other-modules:       Network.Sendgrid.Utils
   -- other-extensions:
   build-depends:
-    base,
+    base (==4.*),
     http-conduit,
     aeson,
     bytestring,
