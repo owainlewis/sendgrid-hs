@@ -17,8 +17,8 @@ extra-source-files:  README.md
 cabal-version:       >=1.10
 
 library
-  exposed-modules:     Main
-  -- other-modules:
+  exposed-modules:     Network.Sendgrid.Api
+  other-modules:       Network.Sendgrid.Utils
   -- other-extensions:
   build-depends:
     base,
