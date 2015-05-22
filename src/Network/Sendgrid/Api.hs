@@ -164,6 +164,7 @@ getProfile :: (MonadThrow m, MonadIO m, MonadBaseControl IO m, Tupled a) =>
   m (L.ByteString)
 getProfile auth = let fullUrl = baseUrl <> "profile.get.json" in
                   makeRequest POST fullUrl (asTuple auth)
+                  
 ------------------------------------------------------------------------------
 
 data MailSuccess = MailSuccess {
@@ -173,8 +174,9 @@ data MailSuccess = MailSuccess {
 instance Aeson.FromJSON MailSuccess where
     parseJSON (Aeson.Object o) = MailSuccess <$> o Aeson..: "message"
     parseJSON _ = mzero
-
+    
 ------------------------------------------------------------------------------
+
 -- | Send an email message
 --   i.e sendEmail (Authentication "FOO" "BAR") (Message ...)
 sendEmail :: (Tupled a1, Tupled a) =>
