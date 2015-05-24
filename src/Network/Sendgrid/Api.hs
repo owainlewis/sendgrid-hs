@@ -24,8 +24,6 @@ import           Data.List                   (partition)
 import           Data.Monoid                 ((<>))
 import qualified Data.Text                   as T
 import           Network.HTTP.Conduit
-
--- import Control.Monad.Trans.Control.MonadBaseControl
 import           Network.Sendgrid.Utils      (urlEncode)
 
 -- | The base url for the Sendgrid API
