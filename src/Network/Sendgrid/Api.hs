@@ -34,8 +34,10 @@ baseUrl :: String
 baseUrl = "https://api.sendgrid.com/api/"
 
 class Tupled a where asTuple :: a -> [(String, String)]
+
 ------------------------------------------------------------------------------
 -- | Auth
+
 data Authentication = Authentication
   { user :: String
   , key  :: String
@@ -50,6 +52,7 @@ instance Tupled Authentication where
 
 ------------------------------------------------------------------------------
 -- | Messages
+
 data EmailMessage = EmailMessage {
     to      :: String
   , from    :: String
@@ -70,6 +73,7 @@ instance Tupled EmailMessage where
 
 ------------------------------------------------------------------------------
 -- | Helper function to encoding URLs
+
 urlEncodeVars :: [(String,String)] -> String
 urlEncodeVars [] = []
 urlEncodeVars ((n,v):t) =
