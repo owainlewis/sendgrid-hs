@@ -31,9 +31,9 @@ import           Network.Sendgrid.Utils      (urlEncode)
 baseUrl :: String
 baseUrl = "https://api.sendgrid.com/api/"
 
-class Tupled a where asTuple :: a -> [(String, String)]
+class Tupled a where 
+    asTuple :: a -> [(String, String)]
 
-------------------------------------------------------------------------------
 -- | Auth
 
 data Authentication = Authentication
@@ -48,7 +48,6 @@ instance Tupled Authentication where
     where u = user a
           k = key a
 
-------------------------------------------------------------------------------
 -- | Messages
 
 data EmailMessage = EmailMessage {
@@ -69,7 +68,6 @@ instance Tupled EmailMessage where
       , ("subject", s)
       , ("text", x) ]
 
-------------------------------------------------------------------------------
 -- | Helper function to encoding URLs
 
 urlEncodeVars :: [(String,String)] -> String
@@ -96,7 +94,6 @@ instance Show Method where
     show GET  = "GET"
     show POST = "POST"
 
-------------------------------------------------------------------------------
 -- | HTTP request helpers
 
 makeRequest method url body =
@@ -111,7 +108,6 @@ makeRequest method url body =
     response <- withManager $ httpLbs req
     return $ responseBody response
 
-------------------------------------------------------------------------------
 -- | Request helpers
 
 postRequest :: (MonadThrow m, MonadIO m, MonadBaseControl IO m) =>
@@ -126,7 +122,6 @@ getRequest :: (MonadThrow m, MonadIO m, MonadBaseControl IO m) =>
   m L.ByteString
 getRequest = makeRequest GET
 
-------------------------------------------------------------------------------
 -- | Get user profile
 
 data Profile = Profile {
@@ -166,8 +161,6 @@ getProfile :: (MonadThrow m, MonadIO m, MonadBaseControl IO m, Tupled a) =>
   m (L.ByteString)
 getProfile auth = let fullUrl = baseUrl <> "profile.get.json" in
                   makeRequest POST fullUrl (asTuple auth)
-                  
-------------------------------------------------------------------------------
 
 data MailSuccess = MailSuccess {
   message :: String
@@ -176,14 +169,12 @@ data MailSuccess = MailSuccess {
 instance Aeson.FromJSON MailSuccess where
     parseJSON (Aeson.Object o) = MailSuccess <$> o Aeson..: "message"
     parseJSON _ = mzero
-    
-------------------------------------------------------------------------------
-
+  
 -- | Send an email message
 --   i.e sendEmail (Authentication "FOO" "BAR") (Message ...)
-sendEmail :: (Tupled a1, Tupled a) =>
+sendEmail :: (Tupled a, Tupled b) =>
   a ->
-  a1 ->
+  b ->
   IO (Maybe MailSuccess)
 sendEmail auth message =
   let fullUrl = baseUrl <> "mail.send.json"
