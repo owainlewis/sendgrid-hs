@@ -187,4 +187,3 @@ sendEmail auth message =
   let fullUrl = baseUrl <> "mail.send.json"
       response = makeRequest POST fullUrl (asTuple auth <> asTuple message) in
   Aeson.decode <$> response
-
