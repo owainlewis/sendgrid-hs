@@ -1,4 +1,4 @@
- #Sendgrid
+# Sendgrid
  
 A Haskell library for sending email with Sendgrid
 
