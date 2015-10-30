@@ -1,8 +1,5 @@
 {-# LANGUAGE NoMonomorphismRestriction #-}
-module Main
-  ( sendWelcomeMessage
-  , main )
-  where
+module Main ( sendWelcomeMessage, main ) where
 
 import           Network.Sendgrid.Api
 
@@ -16,4 +13,3 @@ sendWelcomeMessage = sendEmail (Authentication "" "") message
 
 main :: IO (Maybe MailSuccess)
 main = sendWelcomeMessage
-
