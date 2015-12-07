@@ -27,15 +27,10 @@ import qualified Data.Text                   as T
 import           Network.HTTP.Conduit
 import           Network.Sendgrid.Utils      (urlEncode)
 
--- | The base url for the Sendgrid API
---
 baseUrl :: String
 baseUrl = "https://api.sendgrid.com/api/"
 
-class Tupled a where
-    asTuple :: a -> [(String, String)]
-
--- | Auth
+class Tupled a where asTuple :: a -> [(String, String)]
 
 data Authentication = Authentication
   { user :: String
@@ -48,8 +43,6 @@ instance Tupled Authentication where
     , ("api_key", k) ]
     where u = user a
           k = key a
-
--- | Messages
 
 data EmailMessage = EmailMessage {
     to      :: String
@@ -115,8 +108,6 @@ makeRequest method url body =
     response <- withManager $ httpLbs req
     return $ responseBody response
 
--- | Request helpers
-
 postRequest :: (MonadThrow m, MonadIO m, MonadBaseControl IO m) =>
   String ->
   [ (String, String) ] ->
@@ -128,8 +119,6 @@ getRequest :: (MonadThrow m, MonadIO m, MonadBaseControl IO m) =>
   [ (String, String) ] ->
   m L.ByteString
 getRequest = makeRequest GET
-
--- | Get user profile
 
 data Profile = Profile {
     profileUsername  :: String
