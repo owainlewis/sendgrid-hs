@@ -1,5 +1,8 @@
 {-# LANGUAGE NoMonomorphismRestriction #-}
-module Main ( sendWelcomeMessage, main ) where
+module Main 
+  ( sendWelcomeMessage
+  , main 
+  ) where
 
 import           Network.Sendgrid.Api
 
