@@ -65,8 +65,6 @@ instance Tupled EmailMessage where
       , ("text", fromMaybe "" x)
       , ("html", fromMaybe "" h) ]
 
--- | Helper function to encoding URLs
-
 urlEncodeVars :: [(String,String)] -> String
 urlEncodeVars [] = []
 urlEncodeVars ((n,v):t) =
@@ -166,8 +164,7 @@ instance Aeson.FromJSON MailSuccess where
     parseJSON (Aeson.Object o) = MailSuccess <$> o Aeson..: "message"
     parseJSON _ = mzero
 
--- | Send an email message
---   i.e sendEmail (Authentication "FOO" "BAR") (Message ...)
+-- | Send an email message i.e sendEmail (Authentication "FOO" "BAR") (Message ...)
 sendEmail :: (Tupled a, Tupled b) =>
   a ->
   b ->
