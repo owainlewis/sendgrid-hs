@@ -1,175 +1,607 @@
-{-# LANGUAGE FlexibleContexts          #-}
-{-# LANGUAGE MultiParamTypeClasses     #-}
-{-# LANGUAGE NoMonomorphismRestriction #-}
-{-# LANGUAGE OverloadedStrings         #-}
+{-# LANGUAGE OverloadedStrings #-}
+
 module Network.Sendgrid.Api
-  ( Authentication(..)
-  , EmailMessage(..)
-  , MailSuccess(..)
-  , makeRequest
-  , getRequest
-  , postRequest
-  , sendEmail
-  ) where
+  ( ApiKey (..),
+    SendGridClient (..),
+    defaultClient,
+    SendGridResponse (..),
+    SendGridError (..),
+    SendGridErrorResponse (..),
+    SendGridErrorMessage (..),
+    parseSendGridErrorResponse,
+    EmailAddress (..),
+    emailAddress,
+    namedEmailAddress,
+    ContentType (..),
+    Content (..),
+    plainTextContent,
+    htmlContent,
+    Personalization (..),
+    personalization,
+    AttachmentDisposition (..),
+    Attachment (..),
+    attachment,
+    Asm (..),
+    Toggle (..),
+    BccSetting (..),
+    FooterSetting (..),
+    SpamCheckSetting (..),
+    MailSettings (..),
+    ClickTrackingSetting (..),
+    OpenTrackingSetting (..),
+    SubscriptionTrackingSetting (..),
+    GanalyticsSetting (..),
+    TrackingSettings (..),
+    SendGridMail (..),
+    simpleMail,
+    validateMail,
+    mailSendRequest,
+    sendMail,
+    sendMailWithManager,
+  )
+where
 
-import           Control.Applicative         ((<$>), (<*>))
-import           Control.Monad               (mzero)
-import           Control.Monad.Catch
-import           Control.Monad.IO.Class
-import           Control.Monad.Trans.Control
-import qualified Data.Aeson                  as Aeson
-import qualified Data.ByteString.Char8       as BS
-import qualified Data.ByteString.Lazy        as L
-import           Data.List                   (partition)
-import           Data.Maybe                  (fromMaybe)
-import           Data.Monoid                 ((<>))
-import qualified Data.Text                   as T
-import           Network.HTTP.Conduit
-import           Network.Sendgrid.Utils      (urlEncode)
+import qualified Control.Exception as Exception
+import Data.Aeson
+  ( FromJSON (..),
+    ToJSON (..),
+    Value,
+    eitherDecode,
+    encode,
+    object,
+    withObject,
+    (.:),
+    (.:?),
+    (.=),
+  )
+import Data.Aeson.Key (fromText)
+import Data.Aeson.Types (Pair)
+import qualified Data.ByteString.Char8 as ByteString
+import qualified Data.ByteString.Lazy as LazyByteString
+import Data.CaseInsensitive (mk)
+import qualified Data.Map.Strict as Map
+import qualified Data.Text as Text
+import qualified Data.Text.Encoding as Text
+import Network.HTTP.Client
+  ( HttpException,
+    Manager,
+    Request (..),
+    RequestBody (..),
+    Response,
+    httpLbs,
+    newManager,
+    parseRequest_,
+    responseBody,
+    responseHeaders,
+    responseStatus,
+  )
+import Network.HTTP.Client.TLS (tlsManagerSettings)
+import Network.HTTP.Types.Header (ResponseHeaders)
+import Network.HTTP.Types.Status (Status, statusCode)
 
-baseUrl :: String
-baseUrl = "https://api.sendgrid.com/api/"
+newtype ApiKey = ApiKey
+  { unApiKey :: Text.Text
+  }
+  deriving (Eq, Ord)
 
-class Tupled a where asTuple :: a -> [(String, String)]
+instance Show ApiKey where
+  show _ = "ApiKey <redacted>"
 
-data Authentication = Authentication
-  { user :: String
-  , key  :: String
-  } deriving ( Show )
+data SendGridClient = SendGridClient
+  { sendGridApiKey :: ApiKey,
+    sendGridBaseUrl :: String
+  }
+  deriving (Eq, Show)
 
-instance Tupled Authentication where
-  asTuple a =
-    [ ("api_user", u)
-    , ("api_key", k) ]
-    where u = user a
-          k = key a
+defaultClient :: ApiKey -> SendGridClient
+defaultClient apiKey =
+  SendGridClient
+    { sendGridApiKey = apiKey,
+      sendGridBaseUrl = "https://api.sendgrid.com"
+    }
 
-data EmailMessage = EmailMessage {
-    to      :: String
-  , from    :: String
-  , subject :: String
-  , text    :: Maybe String
-  , html    :: Maybe String
-} deriving ( Eq, Show )
+data EmailAddress = EmailAddress
+  { addressEmail :: Text.Text,
+    addressName :: Maybe Text.Text
+  }
+  deriving (Eq, Show)
 
-instance Tupled EmailMessage where
-    asTuple a =
-      let t = (to a)
-          f = (from a)
-          s = (subject a)
-          x = (text a)
-          h = (html a) in
-      [ ("to", t)
-      , ("from", f)
-      , ("subject", s)
-      , ("text", fromMaybe "" x)
-      , ("html", fromMaybe "" h) ]
+instance ToJSON EmailAddress where
+  toJSON address =
+    object $
+      [ "email" .= addressEmail address
+      ]
+        ++ optional "name" (addressName address)
 
-urlEncodeVars :: [(String,String)] -> String
-urlEncodeVars [] = []
-urlEncodeVars ((n,v):t) =
-    let (same,diff) = partition ((==n) . fst) t
-    in urlEncode n ++ '=' : foldl (\x y -> x ++ ',' : urlEncode y) (urlEncode $ v) (map snd same)
-       ++ urlEncodeRest diff
-       where urlEncodeRest [] = []
-             urlEncodeRest diff = '&' : urlEncodeVars diff
+emailAddress :: Text.Text -> EmailAddress
+emailAddress value =
+  EmailAddress
+    { addressEmail = value,
+      addressName = Nothing
+    }
 
-data Method = GET | POST
+namedEmailAddress :: Text.Text -> Text.Text -> EmailAddress
+namedEmailAddress name value =
+  EmailAddress
+    { addressEmail = value,
+      addressName = Just name
+    }
 
-class AsByteString a where
-    asByteString :: a -> BS.ByteString
+data ContentType
+  = ContentTextPlain
+  | ContentTextHtml
+  deriving (Eq, Show)
 
-showBS :: Show a => a -> BS.ByteString
-showBS = BS.pack . show
+instance ToJSON ContentType where
+  toJSON ContentTextPlain = "text/plain"
+  toJSON ContentTextHtml = "text/html"
 
-instance AsByteString Method where
-  asByteString = showBS
+data Content = Content
+  { contentType :: ContentType,
+    contentValue :: Text.Text
+  }
+  deriving (Eq, Show)
 
-instance Show Method where
-    show GET  = "GET"
-    show POST = "POST"
+instance ToJSON Content where
+  toJSON content =
+    object
+      [ "type" .= contentType content,
+        "value" .= contentValue content
+      ]
 
--- | HTTP request helpers
-makeRequest :: (MonadBaseControl IO m,
-                MonadIO m,
-                MonadThrow m, Show a) =>
-    a -> String -> [(String, String)] -> m L.ByteString
-makeRequest method url body =
-  let rBody = BS.pack . urlEncodeVars $ body in
-  do
-    initReq <- parseUrl url
-    let req = initReq
-              { method = showBS method
-              , requestHeaders = [ ("content-type", "application/x-www-form-urlencoded") ]
-              , requestBody = RequestBodyBS $ rBody
-              }
-    response <- withManager $ httpLbs req
-    return $ responseBody response
+plainTextContent :: Text.Text -> Content
+plainTextContent value =
+  Content
+    { contentType = ContentTextPlain,
+      contentValue = value
+    }
 
-postRequest :: (MonadThrow m, MonadIO m, MonadBaseControl IO m) =>
-  String ->
-  [ (String, String) ] ->
-  m L.ByteString
-postRequest = makeRequest POST
+htmlContent :: Text.Text -> Content
+htmlContent value =
+  Content
+    { contentType = ContentTextHtml,
+      contentValue = value
+    }
 
-getRequest :: (MonadThrow m, MonadIO m, MonadBaseControl IO m) =>
-  String ->
-  [ (String, String) ] ->
-  m L.ByteString
-getRequest = makeRequest GET
+data Personalization = Personalization
+  { personalizationTo :: [EmailAddress],
+    personalizationCc :: [EmailAddress],
+    personalizationBcc :: [EmailAddress],
+    personalizationSubject :: Maybe Text.Text,
+    personalizationHeaders :: Map.Map Text.Text Text.Text,
+    personalizationCustomArgs :: Map.Map Text.Text Text.Text,
+    personalizationDynamicTemplateData :: Map.Map Text.Text Value,
+    personalizationSendAt :: Maybe Int
+  }
+  deriving (Eq, Show)
 
-data Profile = Profile {
-    profileUsername  :: String
-  , profileEmail     :: String
-  , profileActive    :: String
-  , profileFirstName :: String
-  , profileLastName  :: String
-  , profileAddress   :: String
-  , profileCity      :: String
-  , profileState     :: String
-  , profileZip       :: String
-  , profileCountry   :: String
-  , profilePhone     :: String
-  , profileWebsite   :: String
-} deriving ( Show )
+instance ToJSON Personalization where
+  toJSON value =
+    object $
+      [ "to" .= personalizationTo value
+      ]
+        ++ optionalList "cc" (personalizationCc value)
+        ++ optionalList "bcc" (personalizationBcc value)
+        ++ optional "subject" (personalizationSubject value)
+        ++ optionalMap "headers" (personalizationHeaders value)
+        ++ optionalMap "custom_args" (personalizationCustomArgs value)
+        ++ optionalMap "dynamic_template_data" (personalizationDynamicTemplateData value)
+        ++ optional "send_at" (personalizationSendAt value)
 
-instance Aeson.FromJSON Profile where
-    parseJSON (Aeson.Object o) =
-        Profile <$>
-          o Aeson..: "username"   <*>
-          o Aeson..: "email"      <*>
-          o Aeson..: "active"     <*>
-          o Aeson..: "first_name" <*>
-          o Aeson..: "last_name"  <*>
-          o Aeson..: "address"    <*>
-          o Aeson..: "city"       <*>
-          o Aeson..: "state"      <*>
-          o Aeson..: "zip"        <*>
-          o Aeson..: "country"    <*>
-          o Aeson..: "phone"      <*>
-          o Aeson..: "website"
-    parseJSON _ = mzero
+personalization :: [EmailAddress] -> Personalization
+personalization recipients =
+  Personalization
+    { personalizationTo = recipients,
+      personalizationCc = [],
+      personalizationBcc = [],
+      personalizationSubject = Nothing,
+      personalizationHeaders = Map.empty,
+      personalizationCustomArgs = Map.empty,
+      personalizationDynamicTemplateData = Map.empty,
+      personalizationSendAt = Nothing
+    }
 
-getProfile :: (MonadThrow m, MonadIO m, MonadBaseControl IO m, Tupled a) =>
-  a ->
-  m (L.ByteString)
-getProfile auth = 
-    makeRequest POST (baseUrl <> "profile.get.json") (asTuple auth)
+data AttachmentDisposition
+  = DispositionAttachment
+  | DispositionInline
+  deriving (Eq, Show)
 
-data MailSuccess = MailSuccess {
-  message :: String
-} deriving ( Show )
+instance ToJSON AttachmentDisposition where
+  toJSON DispositionAttachment = "attachment"
+  toJSON DispositionInline = "inline"
 
-instance Aeson.FromJSON MailSuccess where
-    parseJSON (Aeson.Object o) = MailSuccess <$> o Aeson..: "message"
-    parseJSON _ = mzero
+data Attachment = Attachment
+  { attachmentContent :: Text.Text,
+    attachmentType :: Maybe Text.Text,
+    attachmentFilename :: Text.Text,
+    attachmentDisposition :: Maybe AttachmentDisposition,
+    attachmentContentId :: Maybe Text.Text
+  }
+  deriving (Eq, Show)
 
--- | Send an email message i.e sendEmail (Authentication "FOO" "BAR") (Message ...)
-sendEmail :: (Tupled a, Tupled b) =>
-  a ->
-  b ->
-  IO (Maybe MailSuccess)
-sendEmail auth message =
-  let fullUrl = baseUrl <> "mail.send.json"
-      response = makeRequest POST fullUrl (asTuple auth <> asTuple message) in
-  Aeson.decode <$> response
+instance ToJSON Attachment where
+  toJSON value =
+    object $
+      [ "content" .= attachmentContent value,
+        "filename" .= attachmentFilename value
+      ]
+        ++ optional "type" (attachmentType value)
+        ++ optional "disposition" (attachmentDisposition value)
+        ++ optional "content_id" (attachmentContentId value)
+
+attachment :: Text.Text -> Text.Text -> Attachment
+attachment base64Content filename =
+  Attachment
+    { attachmentContent = base64Content,
+      attachmentType = Nothing,
+      attachmentFilename = filename,
+      attachmentDisposition = Just DispositionAttachment,
+      attachmentContentId = Nothing
+    }
+
+data Asm = Asm
+  { asmGroupId :: Int,
+    asmGroupsToDisplay :: [Int]
+  }
+  deriving (Eq, Show)
+
+instance ToJSON Asm where
+  toJSON value =
+    object $
+      [ "group_id" .= asmGroupId value
+      ]
+        ++ optionalList "groups_to_display" (asmGroupsToDisplay value)
+
+newtype Toggle = Toggle
+  { toggleEnable :: Bool
+  }
+  deriving (Eq, Show)
+
+instance ToJSON Toggle where
+  toJSON value =
+    object ["enable" .= toggleEnable value]
+
+data BccSetting = BccSetting
+  { bccSettingEnable :: Bool,
+    bccSettingEmail :: Maybe Text.Text
+  }
+  deriving (Eq, Show)
+
+instance ToJSON BccSetting where
+  toJSON value =
+    object $
+      [ "enable" .= bccSettingEnable value
+      ]
+        ++ optional "email" (bccSettingEmail value)
+
+data FooterSetting = FooterSetting
+  { footerSettingEnable :: Bool,
+    footerSettingText :: Maybe Text.Text,
+    footerSettingHtml :: Maybe Text.Text
+  }
+  deriving (Eq, Show)
+
+instance ToJSON FooterSetting where
+  toJSON value =
+    object $
+      [ "enable" .= footerSettingEnable value
+      ]
+        ++ optional "text" (footerSettingText value)
+        ++ optional "html" (footerSettingHtml value)
+
+data SpamCheckSetting = SpamCheckSetting
+  { spamCheckSettingEnable :: Bool,
+    spamCheckSettingThreshold :: Maybe Int,
+    spamCheckSettingPostToUrl :: Maybe Text.Text
+  }
+  deriving (Eq, Show)
+
+instance ToJSON SpamCheckSetting where
+  toJSON value =
+    object $
+      [ "enable" .= spamCheckSettingEnable value
+      ]
+        ++ optional "threshold" (spamCheckSettingThreshold value)
+        ++ optional "post_to_url" (spamCheckSettingPostToUrl value)
+
+data MailSettings = MailSettings
+  { mailSettingsBcc :: Maybe BccSetting,
+    mailSettingsBypassListManagement :: Maybe Toggle,
+    mailSettingsFooter :: Maybe FooterSetting,
+    mailSettingsSandboxMode :: Maybe Toggle,
+    mailSettingsSpamCheck :: Maybe SpamCheckSetting
+  }
+  deriving (Eq, Show)
+
+instance ToJSON MailSettings where
+  toJSON value =
+    object $
+      optional "bcc" (mailSettingsBcc value)
+        ++ optional "bypass_list_management" (mailSettingsBypassListManagement value)
+        ++ optional "footer" (mailSettingsFooter value)
+        ++ optional "sandbox_mode" (mailSettingsSandboxMode value)
+        ++ optional "spam_check" (mailSettingsSpamCheck value)
+
+data ClickTrackingSetting = ClickTrackingSetting
+  { clickTrackingEnable :: Bool,
+    clickTrackingEnableText :: Maybe Bool
+  }
+  deriving (Eq, Show)
+
+instance ToJSON ClickTrackingSetting where
+  toJSON value =
+    object $
+      [ "enable" .= clickTrackingEnable value
+      ]
+        ++ optional "enable_text" (clickTrackingEnableText value)
+
+newtype OpenTrackingSetting = OpenTrackingSetting
+  { openTrackingEnable :: Bool
+  }
+  deriving (Eq, Show)
+
+instance ToJSON OpenTrackingSetting where
+  toJSON value =
+    object ["enable" .= openTrackingEnable value]
+
+data SubscriptionTrackingSetting = SubscriptionTrackingSetting
+  { subscriptionTrackingEnable :: Bool,
+    subscriptionTrackingText :: Maybe Text.Text,
+    subscriptionTrackingHtml :: Maybe Text.Text,
+    subscriptionTrackingSubstitutionTag :: Maybe Text.Text
+  }
+  deriving (Eq, Show)
+
+instance ToJSON SubscriptionTrackingSetting where
+  toJSON value =
+    object $
+      [ "enable" .= subscriptionTrackingEnable value
+      ]
+        ++ optional "text" (subscriptionTrackingText value)
+        ++ optional "html" (subscriptionTrackingHtml value)
+        ++ optional "substitution_tag" (subscriptionTrackingSubstitutionTag value)
+
+data GanalyticsSetting = GanalyticsSetting
+  { ganalyticsEnable :: Bool,
+    ganalyticsUtmSource :: Maybe Text.Text,
+    ganalyticsUtmMedium :: Maybe Text.Text,
+    ganalyticsUtmTerm :: Maybe Text.Text,
+    ganalyticsUtmContent :: Maybe Text.Text,
+    ganalyticsUtmCampaign :: Maybe Text.Text
+  }
+  deriving (Eq, Show)
+
+instance ToJSON GanalyticsSetting where
+  toJSON value =
+    object $
+      [ "enable" .= ganalyticsEnable value
+      ]
+        ++ optional "utm_source" (ganalyticsUtmSource value)
+        ++ optional "utm_medium" (ganalyticsUtmMedium value)
+        ++ optional "utm_term" (ganalyticsUtmTerm value)
+        ++ optional "utm_content" (ganalyticsUtmContent value)
+        ++ optional "utm_campaign" (ganalyticsUtmCampaign value)
+
+data TrackingSettings = TrackingSettings
+  { trackingClick :: Maybe ClickTrackingSetting,
+    trackingOpen :: Maybe OpenTrackingSetting,
+    trackingSubscription :: Maybe SubscriptionTrackingSetting,
+    trackingGanalytics :: Maybe GanalyticsSetting
+  }
+  deriving (Eq, Show)
+
+instance ToJSON TrackingSettings where
+  toJSON value =
+    object $
+      optional "click_tracking" (trackingClick value)
+        ++ optional "open_tracking" (trackingOpen value)
+        ++ optional "subscription_tracking" (trackingSubscription value)
+        ++ optional "ganalytics" (trackingGanalytics value)
+
+data SendGridMail = SendGridMail
+  { mailPersonalizations :: [Personalization],
+    mailFrom :: EmailAddress,
+    mailReplyTo :: Maybe EmailAddress,
+    mailSubject :: Maybe Text.Text,
+    mailContent :: [Content],
+    mailAttachments :: [Attachment],
+    mailTemplateId :: Maybe Text.Text,
+    mailCategories :: [Text.Text],
+    mailCustomArgs :: Map.Map Text.Text Text.Text,
+    mailSendAt :: Maybe Int,
+    mailBatchId :: Maybe Text.Text,
+    mailAsm :: Maybe Asm,
+    mailMailSettings :: Maybe MailSettings,
+    mailTrackingSettings :: Maybe TrackingSettings
+  }
+  deriving (Eq, Show)
+
+instance ToJSON SendGridMail where
+  toJSON value =
+    object $
+      [ "personalizations" .= mailPersonalizations value,
+        "from" .= mailFrom value
+      ]
+        ++ optional "reply_to" (mailReplyTo value)
+        ++ optional "subject" (mailSubject value)
+        ++ optionalList "content" (mailContent value)
+        ++ optionalList "attachments" (mailAttachments value)
+        ++ optional "template_id" (mailTemplateId value)
+        ++ optionalList "categories" (mailCategories value)
+        ++ optionalMap "custom_args" (mailCustomArgs value)
+        ++ optional "send_at" (mailSendAt value)
+        ++ optional "batch_id" (mailBatchId value)
+        ++ optional "asm" (mailAsm value)
+        ++ optional "mail_settings" (mailMailSettings value)
+        ++ optional "tracking_settings" (mailTrackingSettings value)
+
+simpleMail :: EmailAddress -> [EmailAddress] -> Text.Text -> [Content] -> SendGridMail
+simpleMail sender recipients subject contents =
+  SendGridMail
+    { mailPersonalizations = [personalization recipients],
+      mailFrom = sender,
+      mailReplyTo = Nothing,
+      mailSubject = Just subject,
+      mailContent = contents,
+      mailAttachments = [],
+      mailTemplateId = Nothing,
+      mailCategories = [],
+      mailCustomArgs = Map.empty,
+      mailSendAt = Nothing,
+      mailBatchId = Nothing,
+      mailAsm = Nothing,
+      mailMailSettings = Nothing,
+      mailTrackingSettings = Nothing
+    }
+
+data SendGridResponse = SendGridResponse
+  { sendGridResponseStatus :: Status,
+    sendGridResponseHeaders :: ResponseHeaders,
+    sendGridResponseMessageId :: Maybe Text.Text
+  }
+  deriving (Eq, Show)
+
+data SendGridError
+  = SendGridValidationError [Text.Text]
+  | SendGridHttpException HttpException
+  | SendGridUnexpectedStatus Status LazyByteString.ByteString (Maybe SendGridErrorResponse)
+  deriving (Show)
+
+data SendGridErrorResponse = SendGridErrorResponse
+  { sendGridErrors :: [SendGridErrorMessage]
+  }
+  deriving (Eq, Show)
+
+instance FromJSON SendGridErrorResponse where
+  parseJSON =
+    withObject "SendGridErrorResponse" $ \value ->
+      SendGridErrorResponse
+        <$> value .: "errors"
+
+data SendGridErrorMessage = SendGridErrorMessage
+  { sendGridErrorMessage :: Text.Text,
+    sendGridErrorField :: Maybe Text.Text,
+    sendGridErrorHelp :: Maybe Text.Text
+  }
+  deriving (Eq, Show)
+
+instance FromJSON SendGridErrorMessage where
+  parseJSON =
+    withObject "SendGridErrorMessage" $ \value ->
+      SendGridErrorMessage
+        <$> value .: "message"
+        <*> value .:? "field"
+        <*> value .:? "help"
+
+parseSendGridErrorResponse :: LazyByteString.ByteString -> Either String SendGridErrorResponse
+parseSendGridErrorResponse =
+  eitherDecode
+
+mailSendRequest :: SendGridClient -> SendGridMail -> Request
+mailSendRequest client message =
+  request
+    { method = "POST",
+      requestHeaders =
+        [ ("Authorization", bearerAuthorization (sendGridApiKey client)),
+          ("Content-Type", "application/json"),
+          ("Accept", "application/json")
+        ],
+      requestBody = RequestBodyLBS (encode message)
+    }
+  where
+    request = parseRequest_ (sendGridBaseUrl client <> "/v3/mail/send")
+
+sendMail :: SendGridClient -> SendGridMail -> IO (Either SendGridError SendGridResponse)
+sendMail client message = do
+  manager <- newManager tlsManagerSettings
+  sendMailWithManager manager client message
+
+sendMailWithManager ::
+  Manager ->
+  SendGridClient ->
+  SendGridMail ->
+  IO (Either SendGridError SendGridResponse)
+sendMailWithManager manager client message =
+  case validateMail message of
+    Left errors -> pure (Left (SendGridValidationError errors))
+    Right () -> do
+      result <- Exception.try (httpLbs (mailSendRequest client message) manager)
+      pure $ case result of
+        Left err -> Left (SendGridHttpException err)
+        Right response -> responseToResult response
+
+validateMail :: SendGridMail -> Either [Text.Text] ()
+validateMail message =
+  case validationErrors message of
+    [] -> Right ()
+    errors -> Left errors
+
+validationErrors :: SendGridMail -> [Text.Text]
+validationErrors message =
+  concat
+    [ ["at least one personalization is required" | null (mailPersonalizations message)],
+      [ "each personalization must include at least one to recipient"
+        | any (null . personalizationTo) (mailPersonalizations message)
+      ],
+      [ "content is required when template_id is not set"
+        | null (mailContent message) && mailTemplateId message == Nothing
+      ],
+      [ "subject is required when template_id is not set and any personalization has no subject"
+        | mailTemplateId message == Nothing
+            && mailSubject message == Nothing
+            && any ((== Nothing) . personalizationSubject) (mailPersonalizations message)
+      ],
+      [ "spam_check threshold is required when spam_check is enabled"
+        | spamCheckEnabled message
+            && maybe True ((== Nothing) . spamCheckSettingThreshold) (mailSettingsSpamCheck =<< mailMailSettings message)
+      ],
+      [ "spam_check post_to_url is required when spam_check is enabled"
+        | spamCheckEnabled message
+            && maybe True ((== Nothing) . spamCheckSettingPostToUrl) (mailSettingsSpamCheck =<< mailMailSettings message)
+      ]
+    ]
+
+spamCheckEnabled :: SendGridMail -> Bool
+spamCheckEnabled message =
+  maybe False spamCheckSettingEnable (mailSettingsSpamCheck =<< mailMailSettings message)
+
+responseToResult ::
+  Response LazyByteString.ByteString ->
+  Either SendGridError SendGridResponse
+responseToResult response
+  | statusCode status == 202 =
+      Right
+        SendGridResponse
+          { sendGridResponseStatus = status,
+            sendGridResponseHeaders = headers,
+            sendGridResponseMessageId = decodeHeaderText <$> lookup (mk "X-Message-Id") headers
+          }
+  | otherwise =
+      Left (SendGridUnexpectedStatus status body parsedBody)
+  where
+    status = responseStatus response
+    headers = responseHeaders response
+    body = responseBody response
+    parsedBody = either (const Nothing) Just (parseSendGridErrorResponse body)
+
+bearerAuthorization :: ApiKey -> ByteString.ByteString
+bearerAuthorization (ApiKey value) =
+  "Bearer " <> Text.encodeUtf8 value
+
+decodeHeaderText :: ByteString.ByteString -> Text.Text
+decodeHeaderText =
+  Text.decodeUtf8
+
+optional :: ToJSON value => Text.Text -> Maybe value -> [Pair]
+optional name =
+  maybe [] (\value -> [fromText name .= value])
+
+optionalList :: ToJSON value => Text.Text -> [value] -> [Pair]
+optionalList name values
+  | null values = []
+  | otherwise = [fromText name .= values]
+
+optionalMap :: ToJSON value => Text.Text -> Map.Map Text.Text value -> [Pair]
+optionalMap name values
+  | Map.null values = []
+  | otherwise = [fromText name .= values]
