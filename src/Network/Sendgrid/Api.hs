@@ -545,6 +545,11 @@ validationErrors message =
       ],
       [ "content is required when template_id is not set"
         | null (mailContent message) && mailTemplateId message == Nothing
+      ],
+      [ "subject is required when template_id is not set and any personalization has no subject"
+        | mailTemplateId message == Nothing
+            && mailSubject message == Nothing
+            && any ((== Nothing) . personalizationSubject) (mailPersonalizations message)
       ]
     ]
 

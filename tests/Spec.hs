@@ -129,6 +129,21 @@ main =
               "content is required when template_id is not set"
             ]
 
+      it "requires a subject source for non-template requests" $ do
+        validateMail
+          ( (simpleMail
+                (emailAddress "sender@example.com")
+                [emailAddress "person@example.com"]
+                "Hello"
+                [plainTextContent "Body"]
+            )
+              { mailSubject = Nothing
+              }
+          )
+          `shouldBe` Left
+            [ "subject is required when template_id is not set and any personalization has no subject"
+            ]
+
 richMessage :: SendGridMail
 richMessage =
   SendGridMail
