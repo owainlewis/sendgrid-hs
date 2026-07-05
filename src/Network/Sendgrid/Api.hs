@@ -550,8 +550,20 @@ validationErrors message =
         | mailTemplateId message == Nothing
             && mailSubject message == Nothing
             && any ((== Nothing) . personalizationSubject) (mailPersonalizations message)
+      ],
+      [ "spam_check threshold is required when spam_check is enabled"
+        | spamCheckEnabled message
+            && maybe True ((== Nothing) . spamCheckSettingThreshold) (mailSettingsSpamCheck =<< mailMailSettings message)
+      ],
+      [ "spam_check post_to_url is required when spam_check is enabled"
+        | spamCheckEnabled message
+            && maybe True ((== Nothing) . spamCheckSettingPostToUrl) (mailSettingsSpamCheck =<< mailMailSettings message)
       ]
     ]
+
+spamCheckEnabled :: SendGridMail -> Bool
+spamCheckEnabled message =
+  maybe False spamCheckSettingEnable (mailSettingsSpamCheck =<< mailMailSettings message)
 
 responseToResult ::
   Response LazyByteString.ByteString ->

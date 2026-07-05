@@ -144,6 +144,25 @@ main =
             [ "subject is required when template_id is not set and any personalization has no subject"
             ]
 
+      it "requires spam check fields when spam check is enabled" $ do
+        validateMail
+          ( richMessage
+              { mailMailSettings =
+                  Just
+                    MailSettings
+                      { mailSettingsBcc = Nothing,
+                        mailSettingsBypassListManagement = Nothing,
+                        mailSettingsFooter = Nothing,
+                        mailSettingsSandboxMode = Nothing,
+                        mailSettingsSpamCheck = Just (SpamCheckSetting True Nothing Nothing)
+                      }
+              }
+          )
+          `shouldBe` Left
+            [ "spam_check threshold is required when spam_check is enabled",
+              "spam_check post_to_url is required when spam_check is enabled"
+            ]
+
 richMessage :: SendGridMail
 richMessage =
   SendGridMail
